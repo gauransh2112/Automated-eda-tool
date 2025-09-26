@@ -1,0 +1,19 @@
+version: 1.0.0
+servers:
+  - id: eda-tool-server
+    image: eda-tool:latest
+    name: "My First EDA Tool"
+    description: "A custom tool to perform basic EDA tasks."
+    tools:
+      - id: get_csv_head
+        name: "Get CSV Head"
+        description: "Reads a local CSV file and shows the first few rows."
+        parameters:
+          - name: file_path
+            type: string
+            description: "The full, absolute path to the local CSV file."
+            required: true
+          - name: num_rows
+            type: integer
+            description: "The number of rows to show from the top (default 5)."
+            required: false

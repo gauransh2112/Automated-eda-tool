@@ -1,0 +1,24 @@
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: eda_backend
+    restart: unless-stopped 
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./plots:/app/plots
+      - ./zip_downloads:/app/zip_downloads
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: eda_frontend
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
