@@ -29,7 +29,7 @@ To run this project locally, you need to have Docker and Docker Compose installe
    # Now open docker desktop
     docker-compose up --build
    
-3.Access the application:
+2.Access the application:
   Open your browser to http://localhost:8501
  
 
