@@ -24,15 +24,14 @@ To run this project locally, you need to have Docker and Docker Compose installe
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/gauransh2112/automated-eda-tool-docker.git](https://github.com/gauransh2112/automated-eda-tool-docker.git)
-   cd automated-eda-tool-docker
-
-2. Run the application:
-   docker-compose up --build
+   git clone https://github.com/gauransh2112/automated-eda-tool-docker.git
+   cd automated-eda-tool-docker2wQ
+   # Now open docker desktop
+    docker-compose up --build
    
 3.Access the application:
-  Frontend: Open your browser to http://localhost:8501
-  Backend API Docs: Open your browser to http://localhost:8000/docs
+  Open your browser to http://localhost:8501
+ 
 
 💬 Example Prompts:
   ---> show histogram of Age
