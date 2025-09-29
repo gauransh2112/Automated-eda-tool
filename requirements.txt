@@ -6,3 +6,5 @@ seaborn
 scikit-learn
 python-multipart
 streamlit
+redis
+scikit-learn
