@@ -3,16 +3,23 @@ import os
 import uuid
 import pandas as pd
 import zipfile
-import seaborn as sns
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
-import redis
 import pickle
 from typing import List
 from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.responses import JSONResponse, FileResponse
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
+
+try:
+    import redis
+except ImportError:
+    redis = None
 
 # --- App Setup ---
 app = FastAPI(title="EDA Tool API")
@@ -21,14 +28,18 @@ app = FastAPI(title="EDA Tool API")
 df_global = None
 
 # --- Redis Connection ---
-try:
-    r = redis.Redis(host='redis', port=6379, db=0, decode_responses=False)
-    r.ping()
-    print("✅ Successfully connected to Redis.")
-    redis_available = True
-except redis.exceptions.ConnectionError as e:
-    print(f"⚠️ Could not connect to Redis: {e}. Using in-memory fallback.")
+if redis is None:
+    print("Redis package is not installed. Using in-memory fallback.")
     redis_available = False
+else:
+    try:
+        r = redis.Redis(host='redis', port=6379, db=0, decode_responses=False)
+        r.ping()
+        print("Successfully connected to Redis.")
+        redis_available = True
+    except redis.exceptions.ConnectionError as e:
+        print(f"Could not connect to Redis: {e}. Using in-memory fallback.")
+        redis_available = False
 
 # --- Directory Setup ---
 PLOT_DIR, ZIP_DIR = "plots", "zip_downloads"
@@ -56,6 +67,23 @@ def set_dataframe(session_id: str, df: pd.DataFrame):
         r.set(session_id, pickle.dumps(df))
     else:
         df_global = df
+
+
+def validate_numeric_columns(df: pd.DataFrame, columns: List[str]):
+    missing = [col for col in columns if col not in df.columns]
+    if missing:
+        return f"Column(s) not found: {', '.join(missing)}"
+
+    non_numeric = [col for col in columns if not pd.api.types.is_numeric_dtype(df[col])]
+    if non_numeric:
+        return f"Regression requires numeric columns. Non-numeric column(s): {', '.join(non_numeric)}"
+
+    return None
+
+
+def regression_score(model: LinearRegression, X_train, X_test, y_train, y_test):
+    score = model.score(X_test, y_test) if len(y_test) >= 2 else model.score(X_train, y_train)
+    return float(score) if np.isfinite(score) else 0.0
 
 # --------------------------
 # API Endpoints
@@ -86,8 +114,10 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/columns")
 async def get_columns():
     df = get_dataframe("user123")
-    if df is None: return {"error": "No file uploaded yet"}
-    return {"columns": df.columns.tolist()}
+    if df is None:
+        return JSONResponse(status_code=404, content={"error": "No file uploaded yet"})
+    numeric_columns = df.select_dtypes(include=np.number).columns.tolist()
+    return {"columns": df.columns.tolist(), "numeric_columns": numeric_columns}
 
 @app.get("/preview")
 async def preview_data(rows: int = 5):
@@ -260,19 +290,22 @@ async def eda_prompt(prompt: str):
 async def linear_regression(x_col: str, y_col: str):
     df = get_dataframe("user123")
     if df is None:
-        return {"error": "No file uploaded yet"}
+        return JSONResponse(status_code=404, content={"error": "No file uploaded yet"})
+    validation_error = validate_numeric_columns(df, [x_col, y_col])
+    if validation_error:
+        return JSONResponse(status_code=400, content={"error": validation_error})
     # Rest of your regression logic
     df_copy = df.copy()
     df_copy.dropna(subset=[x_col, y_col], inplace=True)
     if len(df_copy) < 2:
-        return {"error": "Not enough data to perform regression after dropping missing values."}
+        return JSONResponse(status_code=400, content={"error": "Not enough data to perform regression after dropping missing values."})
     X = df_copy[[x_col]]
     y = df_copy[y_col]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     model = LinearRegression()
     model.fit(X_train, y_train)
-    score = model.score(X_test, y_test)
-    coef = model.coef_[0]
+    score = regression_score(model, X_train, X_test, y_train, y_test)
+    coef = float(model.coef_[0])
     return {
         "model": "Linear Regression",
         "independent_variable": x_col,
@@ -291,14 +324,19 @@ async def multiple_regression(
 ):
     df = get_dataframe("user123")
     if df is None:
-        return {"error": "No file uploaded yet"}
+        return JSONResponse(status_code=404, content={"error": "No file uploaded yet"})
+    if not x_cols or not y_col:
+        return JSONResponse(status_code=400, content={"error": "Please select at least one X column and one Y column."})
+    validation_error = validate_numeric_columns(df, x_cols + [y_col])
+    if validation_error:
+        return JSONResponse(status_code=400, content={"error": validation_error})
     
     all_cols = x_cols + [y_col]
     df_copy = df.copy()
     df_copy.dropna(subset=all_cols, inplace=True)
     
     if len(df_copy) < len(all_cols) + 1:
-        return {"error": "Not enough data for multiple regression."}
+        return JSONResponse(status_code=400, content={"error": "Not enough data for multiple regression."})
 
     X = df_copy[x_cols]
     y = df_copy[y_col]
@@ -307,10 +345,10 @@ async def multiple_regression(
     model = LinearRegression()
     model.fit(X_train, y_train)
     
-    score = model.score(X_test, y_test)
+    score = regression_score(model, X_train, X_test, y_train, y_test)
     
     # Create a dictionary of coefficients for each feature
-    coefficients = {feature: coef for feature, coef in zip(x_cols, model.coef_)}
+    coefficients = {feature: float(coef) for feature, coef in zip(x_cols, model.coef_)}
     
     return {
         "model": "Multiple Linear Regression",
